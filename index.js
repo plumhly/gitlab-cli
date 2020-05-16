@@ -16,6 +16,7 @@ var options = require('./options')
 var packageJson = require('./package.json')
 
 var regexParseProjectName = /(.+:\/\/.+?\/|.+:)(.+\/[^\.]+)+(\.git)?/;
+var regexParseOnlyProject = /(.+:\/\/.+?\/|.+:)(.+\/)([^\.]+)+(\.git)?/;
 
 var gitlab = new Gitlab(options);
 gitlab.options = options;
@@ -355,19 +356,28 @@ function createMergeRequest(options) {
 
     logger.log('\ngitlab host obtained : ' + gitlabHost.green);
 
-    var match = remoteURL.match(regexParseProjectName);
+    var match = remoteURL.match(regexParseOnlyProject);
     if (match) {
-      var projectName = match[2];
+      var projectName = match[3];
     } else {
       console.error(colors.red('The remote at which ' + store.get('sourceBranch') + ' is tracked doesn\'t match the expected format.'));
       console.log('Please contact developer if this is a valid gitlab repository.');
       process.exit(1);
     }
     logger.log('\nProject name derived from host :', projectName);
-    logger.log('\nGetting gitlab project info for :', projectName);
-    store.set({sourceRemoteURL : remoteURL})
-    return gitlab.Projects.show(projectName)
-  }).then(function (project) {
+    logger.log('\nSearch gitlab project info for :', projectName);
+    store.set({sourceRemoteURL : remoteURL});
+    return gitlab.Projects.search(projectName);
+  }).
+  then(function (projects) {
+    if (projects.length == 0) {
+      console.error(colors.red('\nCan not find project'));
+      process.exit(1);
+    }
+    logger.log('\nGetting gitlab project info for :', projects[0]);
+    return projects[0];
+  })
+  .then(function (project) {
     logger.log('Base project info obtained :', JSON.stringify(project).green);
 
     var defaultBranch = project.default_branch;
@@ -388,18 +398,26 @@ function createMergeRequest(options) {
     return getURLOfRemote(targetRemote)
   })
   .then(function (targetRemoteUrl) {
-    var targetMatch = targetRemoteUrl.match(regexParseProjectName);
+    var targetMatch = targetRemoteUrl.match(regexParseOnlyProject);
     if (targetMatch) {
-      var targetProjectName = targetMatch[2];
+      var targetProjectName = targetMatch[3];
     } else {
       console.error(colors.red('The remote at which ' + targetBranch + ' is tracked doesn\'t match the expected format.'));
       console.log('Please contact developer if this is a valid gitlab repository.');
       process.exit(1);
     }
 
-    logger.log('Getting target project information');
-    store.set({targetRemoteUrl : targetRemoteUrl})
-    return gitlab.Projects.show(targetProjectName)
+    logger.log('Getting target project information: ' + targetProjectName);
+    store.set({targetRemoteUrl : targetRemoteUrl});
+    return gitlab.Projects.search(targetProjectName);
+  }).
+  then(function (projects) {
+    if (projects.length == 0) {
+      console.error(colors.red('\nCan not find project'));
+      process.exit(1);
+    }
+    logger.log('\nGetting gitlab project info for :', projects[0]);
+    return projects[0];
   })
   .then(function (targetProject) {
     logger.log('Target project info obtained :', JSON.stringify(targetProject).green);
